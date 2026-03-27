@@ -1,0 +1,11 @@
+torch
+torchvision
+torchaudio
+streamlit
+rasterio
+xarray
+netCDF4
+numpy
+matplotlib
+scikit-learn
+pandas

@@ -65,6 +65,54 @@ def get_first_file(folder, ext):
                 return os.path.join(root, f)
     return None
 
+def generate_replication_adaptation_report(location, risk_prob, model_version="v2.0-5Expert"):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    # Adaptation Logic
+    if risk_prob > 0.65:
+        level, action = "URGENT", "Immediate evacuation of Tier-1 zones and deployment of physical debris barriers."
+    else:
+        level, action = "MONITORING", "Reforestation of slopes using deep-rooted vegetation and routine drainage clearing."
+
+    report = f"""
+============================================================
+REPLICATION & ADAPTATION STRATEGY REPORT
+============================================================
+Target Location : {location}
+Model Engine    : {model_version} Mixture of Experts
+Date Generated  : {timestamp}
+
+------------------------------------------------------------
+PART A: REPLICATION PROTOCOL (Technical Setup)
+------------------------------------------------------------
+To replicate these results in a new geographic region:
+1. Data Acquisition: 
+   - Sentinel-1 (GRD, VV+VH) & Sentinel-2 (L2A) via Copernicus.
+   - SRTM 30m Digital Elevation Model (DEM) for slope analysis.
+2. Pre-processing:
+   - Normalize all rasters to a range.
+   - Flatten to 1024-dimensional feature vectors.
+3. Model Loading:
+   - Initialize 5-Expert MoE Architecture.
+   - Load 'landslide_moE_v2_5expert.pth' weights.
+
+------------------------------------------------------------
+PART B: ADAPTATION MEASURES (Action Plan)
+------------------------------------------------------------
+Risk Probability : {risk_prob*100:.2f}%
+Adaptation Tier  : {level}
+
+Recommended Strategic Actions:
+- [Physical] {action}
+- [Systemic] Update local GIS zoning maps to reflect new {risk_prob*100:.0f}% risk threshold.
+- [Sensor] Install ground-based tiltmeters to validate MoE displacement predictions.
+
+============================================================
+END OF REPORT - PROJECT DDM-LANDSLIDE
+============================================================
+"""
+    return report
+
 def generate_detailed_report(location_name, risk_prob, data_sources):
     """Generates a detailed markdown/text report for the analysis."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -237,9 +285,10 @@ local_data_used = {
 }
 
 if st.button("Analyze", type="primary"):
-    with st.spinner("Analyzing satellite telemetry..."):
-        
-        # Scenario 1: Wayanad T1
+    rep_adapt_report = "Analysis not yet complete."
+    pred = 0.0
+    
+    with st.spinner("Processing 5-Sensor Fusion..."):
         if analysis_mode == "Wayanad T1 (Past)":
             s1, s2, r, soil, paths = load_geodata("./Wayanad_T1")
             pred = model(s1, s2, r, soil).item()
@@ -308,81 +357,100 @@ if st.button("Analyze", type="primary"):
             with st.expander("📄 View Detailed Analysis Report", expanded=True):
                 st.text(detailed_report)
 
-# ==========================================
-# NEW SCENARIO 5: CUSTOM UPLOAD
-# ==========================================
-elif analysis_mode == "Custom Data Upload":
-    st.subheader("📤 Upload Custom Satellite Data")
-    
-    st.info("""
-    **Required Data Format:**
-    * **Sentinel-1 (SAR):** Single `.tif` format
-    * **Sentinel-2 (Optical):** Multiple `.tif` band files (Upload all together)
-    * **Soil Moisture:** Multiple `.tif` files (Upload all together)
-    * **Rainfall (Optional):** `.nc` format (NetCDF climate data)
-    """)
-    
-    with st.form("upload_form"):
-        s1_file = st.file_uploader("Upload Sentinel-1 (.tif)", type=["tif", "tiff"])
-        s2_files = st.file_uploader("Upload Sentinel-2 bands (.tif)", type=["tif", "tiff"], accept_multiple_files=True)
-        soil_files = st.file_uploader("Upload Soil Moisture (.tif)", type=["tif", "tiff"], accept_multiple_files=True)
-        rain_file = st.file_uploader("Upload Rainfall (.nc)", type=["nc"])
-        
-        submitted = st.form_submit_button("⚙️ Predict Landslide Risk", type="primary")
-    
-    if submitted:
-        if not (s1_file and len(s2_files) > 0 and len(soil_files) > 0):
-            st.warning("⚠️ Please upload at least Sentinel-1, Sentinel-2 (at least one band), and Soil Moisture (at least one file) to proceed.")
-        else:
-            with st.spinner("Processing custom data through MoE..."):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    def save_file(uploaded_file, filename):
-                        path = os.path.join(temp_dir, filename)
-                        with open(path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        return path
-                    
-                    # Save files to temp directory
-                    s1_path = save_file(s1_file, "s1.tif")
-                    s2_path = save_file(s2_files, "s2_band.tif") 
-                    soil_path = save_file(soil_files, "soil.tif")
-                    
-                    # Process tensors
-                    s1_t = process_array(rasterio.open(s1_path).read())
-                    s2_t = process_array(rasterio.open(s2_path).read())
-                    soil_t = process_array(rasterio.open(soil_path).read())
-                    
-                    if rain_file is not None:
-                        rain_path = save_file(rain_file, "rain.nc")
-                        ds = xr.open_dataset(rain_path)
-                        var_name = list(ds.data_vars)
-                        rain_t = process_array(np.array(ds[var_name]))
-                    else:
-                        rain_t = torch.zeros(1, 1024)
-                    
-                    # Run Model Prediction
-                    with torch.no_grad():
-                        pred = model(s1_t, s2_t, rain_t, soil_t).item()
-                    
-                    # Display Results
-                    st.divider()
-                    st.metric("Custom Location Risk Probability", f"{pred*100:.2f}%")
-                    if pred > 0.5:
-                        st.error("⚠️ **HIGH RISK DETECTED FOR UPLOADED REGION**")
-                    else:
-                        st.success("✅ **LOW RISK DETECTED**")
+        # ==========================================
+        # NEW SCENARIO 5: CUSTOM UPLOAD
+        # ==========================================
+        elif analysis_mode == "Custom Data Upload":
+            st.subheader("📤 Upload Custom Satellite Data")
+            
+            st.info("""
+            **Required Data Format:**
+            * **Sentinel-1 (SAR):** Single `.tif` format
+            * **Sentinel-2 (Optical):** Multiple `.tif` band files (Upload all together)
+            * **Soil Moisture:** Multiple `.tif` files (Upload all together)
+            * **Rainfall (Optional):** `.nc` format (NetCDF climate data)
+            """)
+            
+            with st.form("upload_form"):
+                s1_file = st.file_uploader("Upload Sentinel-1 (.tif)", type=["tif", "tiff"])
+                s2_files = st.file_uploader("Upload Sentinel-2 bands (.tif)", type=["tif", "tiff"], accept_multiple_files=True)
+                soil_files = st.file_uploader("Upload Soil Moisture (.tif)", type=["tif", "tiff"], accept_multiple_files=True)
+                rain_file = st.file_uploader("Upload Rainfall (.nc)", type=["nc"])
+                
+                submitted = st.form_submit_button("⚙️ Predict Landslide Risk", type="primary")
+            
+            if submitted:
+                if not (s1_file and len(s2_files) > 0 and len(soil_files) > 0):
+                    st.warning("⚠️ Please upload at least Sentinel-1, Sentinel-2 (at least one band), and Soil Moisture (at least one file) to proceed.")
+                else:
+                    with st.spinner("Processing custom data through MoE..."):
+                        with tempfile.TemporaryDirectory() as temp_dir:
+                            def save_file(uploaded_file, filename):
+                                path = os.path.join(temp_dir, filename)
+                                with open(path, "wb") as f:
+                                    f.write(uploaded_file.getbuffer())
+                                return path
+                            
+                            # Save files to temp directory
+                            s1_path = save_file(s1_file, "s1.tif")
+                            s2_path = save_file(s2_files, "s2_band.tif") 
+                            soil_path = save_file(soil_files, "soil.tif")
+                            
+                            # Process tensors
+                            s1_t = process_array(rasterio.open(s1_path).read())
+                            s2_t = process_array(rasterio.open(s2_path).read())
+                            soil_t = process_array(rasterio.open(soil_path).read())
+                            
+                            if rain_file is not None:
+                                rain_path = save_file(rain_file, "rain.nc")
+                                ds = xr.open_dataset(rain_path)
+                                var_name = list(ds.data_vars)
+                                rain_t = process_array(np.array(ds[var_name]))
+                            else:
+                                rain_t = torch.zeros(1, 1024)
+                            
+                            # Run Model Prediction
+                            with torch.no_grad():
+                                pred = model(s1_t, s2_t, rain_t, soil_t).item()
+                            
+                            # Display Results
+                            st.divider()
+                            st.metric("Custom Location Risk Probability", f"{pred*100:.2f}%")
+                            if pred > 0.5:
+                                st.error("⚠️ **HIGH RISK DETECTED FOR UPLOADED REGION**")
+                            else:
+                                st.success("✅ **LOW RISK DETECTED**")
+                                
+                            st.write("### Input Visualizations")
+                            plot_satellite(s2_path, soil_path, "Uploaded Optical (Band)", "Uploaded Soil Moisture")
+                            
+                            # Display Report in Browser
+                            custom_data_used = {
+                                "Sentinel-1 (SAR)": s1_file.name if s1_file else "Not Provided",
+                                "Sentinel-2 (Opt)": s2_files.name if s2_files else "Not Provided",
+                                "Soil Moisture": soil_files.name if soil_files else "Not Provided",
+                                "Rainfall Data": rain_file.name if rain_file else "Synthesized (Zero Tensor)"
+                            }
+                            
+                            detailed_report = generate_detailed_report("Custom User Upload", pred, custom_data_used)
+                            with st.expander("📄 View Detailed Analysis Report", expanded=True):
+                                st.text(detailed_report)                        
                         
-                    st.write("### Input Visualizations")
-                    plot_satellite(s2_path, soil_path, "Uploaded Optical (Band)", "Uploaded Soil Moisture")
-                    
-                    # Display Report in Browser
-                    custom_data_used = {
-                        "Sentinel-1 (SAR)": s1_file.name if s1_file else "Not Provided",
-                        "Sentinel-2 (Opt)": s2_files.name if s2_files else "Not Provided",
-                        "Soil Moisture": soil_files.name if soil_files else "Not Provided",
-                        "Rainfall Data": rain_file.name if rain_file else "Synthesized (Zero Tensor)"
-                    }
-                    
-                    detailed_report = generate_detailed_report("Custom User Upload", pred, custom_data_used)
-                    with st.expander("📄 View Detailed Analysis Report", expanded=True):
-                        st.text(detailed_report)
+        # After your prediction logic:
+        rep_adapt_report = generate_replication_adaptation_report(analysis_mode, pred)
+
+    # 3. DISPLAY & SUBMIT (Separately)
+    st.divider()
+    st.subheader("📄 Replication & Adaptation Brief")
+    
+    # Show it in the browser
+    st.text_area("Report Preview", rep_adapt_report, height=300)
+    
+    # PROVIDE THE SEPARATE FILE FOR SUBMISSION
+    st.download_button(
+        label="Download Report",
+        data=rep_adapt_report,
+        file_name=f"Replication_Adaptation_{analysis_mode}.txt",
+        mime="text/plain",
+        type="primary"
+    )
